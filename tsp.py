@@ -4,6 +4,8 @@ Author: Stephen J. Maher
 """
 
 import sys
+import os
+import timeit
 import numpy as np
 
 INFINITY = 1e+20
@@ -14,29 +16,34 @@ class Graph:
     """
 
     def __init__(self):
-        self.maxdist = 0
-        self.nodes = []
+        self.maxdist = 0    # the largest distance between nodes
+        self.nodes = []     # the number of nodes
 
-    # adds a node to the graph
     def add_node(self, node):
+        """
+        adds a node to the graph
+        """
+        # updates the distance between the nodes
         for i in self.nodes:
-            if node.compute_distance(i) > maxdist:
-                maxdist = node.compute_distance(i)
+            if node.compute_distance(i) > self.maxdist:
+                self.maxdist = node.compute_distance(i)
 
         self.nodes.append(node)
 
-    # returns the number of nodes
     def num_nodes(self):
+        """
+        returns the number of nodes
+        """
         return len(self.nodes)
 
-    # returns whether two nodes are connected
     def are_connected(self, idx1, idx2):
-        if idx1 % 2 == 0 and idx1 < float(self.numnodes())/2 and (idx2 + 1) % 2 == 0:
-            return False
-        elif (idx1 + 1) % 2 == 0 and idx1 >= float(self.numnodes())/2 and idx2 % 2 == 0:
-            return False
-        else:
-            return True:
+        """
+        returns whether two nodes are connected
+        """
+        return self.nodes[idx1].is_connected(idx2, self.num_nodes())
+
+    def compute_distance(self, idx1, idx2):
+        return self.nodes[idx1].compute_distance(self.nodes[idx2])
 
 class Node:
     """
@@ -44,13 +51,26 @@ class Node:
     """
 
     def __init__(self, idx, x, y):
-        self.idx = idx
-        self.x = x
-        self.y = y
+        self.idx = idx      # the node index
+        self.x = x          # the x coordinate
+        self.y = y          # the y coordinate
 
-    # computes the distance between the current node and an input node
     def compute_distance(self, checknode):
-        return ((self.x + checknode.x)**2 + (self.y + checknode.y)**2)**0.5
+        """
+        computes the distance between the current node and an input node
+        """
+        return ((self.x - checknode.x)**2 + (self.y - checknode.y)**2)**0.5
+
+    def is_connected(self, idx, numnodes):
+        """
+        returns whether two nodes are connected
+        """
+        if self.idx % 2 == 0 and self.idx < float(numnodes)/2 and (idx + 1) % 2 == 0:
+            return False
+        elif (self.idx + 1) % 2 == 0 and self.idx >= float(numnodes)/2 and idx % 2 == 0:
+            return False
+        else:
+            return True
 
 
 class Route:
@@ -59,94 +79,286 @@ class Route:
     """
 
     def __init__(self, graph):
-        self.maxedge = 0
-        self.minedge = INFINITY
-        self.length = 0
-        self.distance = 0
-        self.route = []
+        self.maxedge = (-1, -1, 0)              # tuple representing the edge with the largest distance
+        self.minedge = (-1, -1, INFINITY)       # tuple representing the edge with the smallest distance
+        self.length = 0                         # the length of the route (not the objective function)
+        self.distance = 0                       # the objective value of the route
+        self.sequence = []                      # the route
+        self.graphmaxdist = graph.maxdist       # graph data:
+        self.numnodes = graph.num_nodes()
+
+        # generate the initial route from the input graph
         self.generate_initial_route(graph)
 
 
-    # generates the initial route
     def generate_initial_route(self, graph):
-        for node in graph.nodes:
-            route.append(node.idx)
+        """
+        generates the initial route
+        """
+        nodelist = [x for x in graph.nodes]
+        self.sequence.append(nodelist[0])
+        nodeidx = 0
+        currnode = nodelist[nodeidx]
+        nodelist[nodeidx] = nodelist[-1]
+        nodelist.pop()
 
-        self.length, self.minedge, self.maxedge = self.compute_route_length()
-        self.distance = (self.maxedge - self.minedge)*graph.maxdist*(graph.num_node() - 1) + self.length
+        # iterates through the list and pops nodes when added to the route.
+        # if not all nodes are added in a pass, then loop is restarted.
+        # node will not be added if the connections are infeasible
+        while len(nodelist) > 0:
+            assert(nodeidx < len(nodelist))
+            nextnode = nodelist[nodeidx]
+            if currnode.is_connected(nextnode.idx, self.numnodes):
+                self.sequence.append(nextnode)
+                nodelist[nodeidx] = nodelist[-1]
+                nodelist.pop()
+                currnode = nextnode
+                if nodeidx == len(nodelist):
+                    nodeidx = 0
+            else:
+                if nodeidx == len(nodelist) - 1:
+                    nodeidx = 0
+                else:
+                    nodeidx += 1
 
 
-    # computes the distance of the route
-    def compute_route_length(self):
+        self.length, self.minedge, self.maxedge = self.compute_route_length(self.sequence)
+        self.distance = (self.maxedge[2] - self.minedge[2])*self.graphmaxdist*(self.numnodes - 2) + self.length
+
+
+    def compute_route_length(self, sequence):
+        """
+        computes the distance of the route
+        """
         length = 0
-        maxedge = 0
-        minedge = INFINITY
-        for i, node in enumerate(self.route[:-1]):
-            currlength = node.compute_distance(self.route[i + 1])
-            minedge = min(currlength, minedge)
-            maxedge = max(currlength, maxedge)
+        maxedge = (-1, -1, 0)
+        minedge = (-1, -1, INFINITY)
+        for i, node in enumerate(sequence):
+            checkidx = i + 1
+            if i == len(sequence) - 1:
+                checkidx = 0
+            currlength = node.compute_distance(sequence[checkidx])
+            if currlength < minedge[2]:
+                minedge = (node.idx, sequence[checkidx].idx, currlength)
+            if currlength > maxedge[2]:
+                maxedge = (node.idx, sequence[checkidx].idx, currlength)
             length += currlength
 
         return length, minedge, maxedge
 
-    # computes the distance of the current route
     def compute_route_distance(self):
-        self.length, self.minedge, self.maxedge = self.compute_route_length()
-        self.distance = (self.maxedge - self.minedge)*graph.maxdist*(graph.num_node() - 1) + self.length
+        """
+        computes the distance of the current route
+        """
+        self.length, self.minedge, self.maxedge = self.compute_route_length(self.sequence)
+        self.distance = (self.maxedge[2] - self.minedge[2])*self.graphmaxdist*(self.numnodes - 2) + self.length
 
         return self.distance
 
+    def compute_sequence_distance(self, sequence):
+        """
+        computes sequence distance
+        """
+        length, minedge, maxedge = self.compute_route_length(sequence)
+        distance = (maxedge[2] - minedge[2])*self.graphmaxdist*(self.numnodes - 2) + length
 
-def swap_2opt(route, i, k):
-    """
-    swaps the endpoints of two edges by reversing a section of nodes, 
-        ideally to eliminate crossovers
-    returns the new route created with a the 2-opt swap
-    route - route to apply 2-opt
-    i - start index of the portion of the route to be reversed
-    k - index of last node in portion of route to be reversed
-    pre: 0 <= i < (len(route) - 1) and i < k < len(route)
-    post: length of the new route must match length of the given route 
-    """
-    assert i >= 0 and i < (len(route) - 1)
-    assert k > i and k < len(route)
-    new_route = route[0:i]
-    new_route.extend(reversed(route[i:k + 1]))
-    new_route.extend(route[k+1:])
-    assert len(new_route) == len(route)
-    return new_route
+        return distance
 
-def run_2opt(route):
+    def check_swap(self, i, j):
+        """
+        check potential swap candidates
+        """
+        # check whether the new connections are feasible
+        if self.sequence[i - 1].is_connected(self.sequence[j].idx, self.numnodes) and \
+                ((j + 1 < self.numnodes and self.sequence[i].is_connected(self.sequence[j + 1].idx, self.numnodes)) or
+                        (j + 1 == self.numnodes and self.sequence[i].is_connected(self.sequence[0].idx,
+                            self.numnodes))):
+            subsequence = []
+            subsequence.extend(reversed(self.sequence[i:j+1]))
+            # checking whether a subsequence is feasible once reversed
+            return self.check_subsequence(subsequence)
+        else:
+            return False
+
+        return True
+
+    def check_subsequence(self, sequence):
+        """
+        checks whether a subsequence is feasible
+        """
+        for i, node in enumerate(sequence):
+            checkidx = i + 1
+            if checkidx >= len(sequence):
+                checkidx = 0
+
+            # checks whether the nodes are connected
+            if not node.is_connected(sequence[checkidx].idx, self.numnodes):
+                return False
+
+        return True
+
+    def distance(self):
+        """
+        helper function returning the distance
+        """
+        return self.distance
+
+    def perform_twoopt_swap(self, i, j):
+        """
+        performs a two-opt swap
+        """
+        swap = False
+        # only perform the swap if the new connections are feasible
+        if self.check_swap(i, j):
+            currdist = self.distance
+            newsequence = self.sequence[0:i]
+            newsequence.extend(reversed(self.sequence[i:j + 1]))
+            newsequence.extend(self.sequence[j+1:])
+            assert(len(self.sequence) == len(newsequence))
+            # complete the swap if the new route is less than the old route
+            if currdist > self.compute_sequence_distance(newsequence):
+                self.sequence = newsequence
+                self.compute_route_distance()
+                swap = True
+
+        return swap
+
+    def print_route(self):
+        """
+        prints the new route
+        """
+        print "Route:",
+        for i, node in enumerate(self.sequence):
+            if i < self.numnodes - 1:
+                print "%d -"%int(node.idx),
+            else:
+                print int(node.idx)
+
+    def print_solution(self, instance, runtime):
+        """
+        prints the solution to a file
+        """
+        dirname = os.path.dirname(instance)
+        filename = os.path.splitext(os.path.basename(instance))[0]
+        solfile = "%s/result%s.txt"%(dirname,filename)
+        f = open(solfile, 'w')
+        f.write("Route:")
+
+
+        for i, node in enumerate(self.sequence):
+            if i < self.numnodes - 1:
+                f.write("%d-"%int(node.idx))
+            else:
+                f.write("%d\n"%int(node.idx))
+
+        f.write("Total Distance: %f\n"%self.length)
+        f.write("Delta value: %f\n"%(self.maxedge[2] - self.minedge[1]))
+        f.write("Run time: %f"%(runtime))
+
+        f.close()
+
+
+    def check_route(self):
+        """
+        checks whether the route is feasible
+        """
+        self.print_route()
+        if not len(self.sequence) == self.numnodes:
+            return False
+
+        maxedge = 0
+        minedge = INFINITY
+        for i, node in enumerate(self.sequence[:-1]):
+            maxedge = max(maxedge, node.compute_distance(self.sequence[i + 1]))
+            minedge = min(minedge, node.compute_distance(self.sequence[i + 1]))
+            if not node.is_connected(self.sequence[i + 1].idx, self.numnodes):
+                print "(%d, %d) is not a feasible connection\n"%(int(node.idx), int(self.sequence[i + 1].idx))
+                return False
+
+        maxedge = max(maxedge, self.sequence[-1].compute_distance(self.sequence[0]))
+        minedge = min(minedge, self.sequence[-1].compute_distance(self.sequence[0]))
+        if not self.sequence[-1].is_connected(self.sequence[0].idx, self.numnodes):
+            print "(%d, %d) is not a feasible connection\n"%(int(self.sequence[-1].idx), int(self.sequence[0].idx))
+            return False
+
+        if not maxedge == self.maxedge[2]:
+            print "Max Edge: %f != %f\n"%(maxedge, self.maxedge[2])
+            return False
+
+        if not minedge == self.minedge[2]:
+            print "Min Edge: %f != %f\n"%(minedge, self.minedge[2])
+            return False
+
+        return True
+
+def run_twoopt(graph, route):
     """
     improves an existing route using the 2-opt swap until no improved route is found
     best path found will differ depending of the start node of the list of nodes
         representing the input tour
     returns the best path found
+    graph -  the graph that the route is being found for
     route - route to improve
     """
     improvement = True
-    best_route = route
-    best_distance = route_distance(route)
-    while improvement: 
+    while improvement:
         improvement = False
-        for i in range(len(best_route) - 1):
-            for k in range(i+1, len(best_route)):
-                new_route = swap_2opt(best_route, i, k)
-                new_distance = route_distance(new_route)
-                if new_distance < best_distance:
-                    best_distance = new_distance
-                    best_route = new_route
+        for i in range(1, graph.num_nodes() - 1):
+            for j in range(i+1, graph.num_nodes()):
+                if route.perform_twoopt_swap(i, j):
                     improvement = True
                     break #improvement found, return to the top of the while loop
+
             if improvement:
                 break
-    assert len(best_route) == len(route)
-    return best_route
+    return route
+
+
+def readInstance(filename):
+    """
+    reads the input instance
+    """
+    instance = np.genfromtxt(filename, delimiter=",", skip_header=1)
+
+    graph = Graph()
+
+    for n in instance:
+        node = Node(n[0], n[1], n[2])
+        graph.add_node(node)
+
+    return graph
 
 
 def main():
+    """
+    the main function (very informative)
+    """
+
+    if len(sys.argv) == 1:
+        print "No file has been input. Please input a TSP instance."
+        return
+
+    start = timeit.default_timer()
+
+    graph = readInstance(sys.argv[1])
+
+    # create the initial route
+    route = Route(graph)
+
+    newroute = run_twoopt(graph, route)
+
+    assert(newroute.check_route())
+
+    stop = timeit.default_timer()
+
+    newroute.print_solution(sys.argv[1], stop - start)
+
+    print "Run time: %f"%(stop - start)
 
 
 
-def __name__ == "__main__":
+
+
+
+if __name__ == "__main__":
     main()
